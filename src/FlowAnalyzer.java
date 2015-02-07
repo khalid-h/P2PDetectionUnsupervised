@@ -56,7 +56,7 @@ public class FlowAnalyzer {
 	
 	private static int dns_threshold = 0;
 	private static int reset_threshold = 0;
-	private static int diverseSubnet_threshold = 10;
+	private static int diverseSubnet_threshold = 50;
 	
 	public FlowAnalyzer(){
 		this.conf = new JobConf();
@@ -561,12 +561,14 @@ public class FlowAnalyzer {
 		    	byte[] bDP = new byte[2];
 		    	byte[] pbytes = new byte[2];
 		    	byte[] bflow_direction = new byte[1];
+		    	byte[] keyData = new byte[8];
+		    	byte[] bcap_time = new byte[4];
 		    	BytesWritable data;
 		    	String strSIP = "0.0.0.0", strTuple = "uninitialized", strFeatures = "", strKeyPair = "", strValue = "";
 		    	String strip1 = "0.0.0.0", strip2 = "0.0.0.0", dip, subnet, str_resolvedIP;
 		    	//String  delimeter = "\t", delimeter2 = ":";
 		    	//String  delimeter = ",", delimeter2 = ",";
-		    	boolean dnsResolved = false, dnsCount = false, normal_packets = false, hostRelated = false, output_flag = false;
+		    	boolean dnsResolved = false, getKeyData = false, normal_packets = false, hostRelated = false, output_flag = false;
 		    	int dnsQuery_count = 0, dnsAnswer_count = 0, temp, bytesperPacket = 0, flowDirection = -1, cap_modTime = 0, reset_count = 0;
 		    	int f3fLen, f3bLen, tempipd, localDuration;
 		    	long sumipd = 0;
@@ -585,6 +587,8 @@ public class FlowAnalyzer {
 		    	ArrayList<BytesWritable> copy_values = new ArrayList<BytesWritable>();
 		    	int fcount = 0;
 		    	
+		    	System.arraycopy(key.getBytes(), 0, keyData, 0, 8);
+		    	
 		    	while (value.hasNext()) {
 		    		 data = value.next();
 		    		 vsize = data.getLength();	 
@@ -595,10 +599,12 @@ public class FlowAnalyzer {
 			    	 
 			    	 switch (vsize) {
 			    	 	case 1: 
-			    	 		if (!dnsCount) {
-			    	 			dnsCount = true;
-			    	 			System.arraycopy(key.getBytes(), 0, sIP, 0, 4);
+			    	 		if (!getKeyData) {
+			    	 			getKeyData = true;
+			    	 			System.arraycopy(keyData, 0, sIP, 0, 4);
+			    	 			System.arraycopy(keyData, 4, bcap_time, 0, 4);
 				    	 		strSIP = CommonData.longTostrIp(Bytes.toLong(sIP));
+				    	 		cap_time = Bytes.toLong(bcap_time);
 			    	 		}
 			    	 		dns_data = data.getBytes();
 			    	 		if (dns_data[0] == 0x01) {
@@ -644,6 +650,13 @@ public class FlowAnalyzer {
 			    	 		//System.out.println("flow originally\t" + Bytes.toInt(bflow_direction));
 			    	 		if (bflow_direction[0] == flow_forward[0]) {
 			    	 			fcount++;
+			    	 			if (!getKeyData) {
+				    	 			getKeyData = true;
+				    	 			System.arraycopy(keyData, 0, sIP, 0, 4);
+				    	 			System.arraycopy(keyData, 4, bcap_time, 0, 4);
+					    	 		strSIP = CommonData.longTostrIp(Bytes.toLong(sIP));
+					    	 		cap_time = Bytes.toLong(bcap_time);
+				    	 		}
 			    	 			System.arraycopy(normal_data, 1, dIP, 0, 4);
 				    	 		dip = CommonData.longTostrIp(Bytes.toLong(dIP));
 				    	 		subnet = dip.substring(0, dip.indexOf('.', dip.indexOf('.') + 1));		//till second "." for /16 prefix
@@ -685,10 +698,14 @@ public class FlowAnalyzer {
 		    	int dnsTotal_count = dnsQuery_count + dnsAnswer_count;
 		    	
 		    	if (diverse_subnets >= diverseSubnet_threshold && dnsTotal_count >= dns_threshold && reset_count >= reset_threshold) {
-		    		String hostAttr = delimeter + Integer.toString(diverse_subnets) + delimeter + Integer.toString(dnsTotal_count) + delimeter + Integer.toString(reset_count);
-		    		System.out.println("Host related features:\t" + hostAttr);
+		    		String hostAttr = delimeter + Integer.toString(dnsTotal_count) + delimeter + Integer.toString(diverse_subnets) +  delimeter + ipPool.size() + delimeter + Integer.toString(reset_count);
+		    		//System.out.println("Host related features:\t" + hostAttr);
 		    		//System.exit(0);
-		    		extract_classifFeatures(key, copy_values.iterator(), output, hostAttr);
+		    		//extract_classifFeatures(key, copy_values.iterator(), output, hostAttr);
+		    		
+		    		//------added------- 
+
+		    		output.collect(new Text(strSIP + delimeter + cap_time), new Text(hostAttr));
 		    	}
 
 		    }
